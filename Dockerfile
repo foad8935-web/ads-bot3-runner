@@ -1,18 +1,13 @@
-# استخدام صورة Playwright الرسمية المجهزة بالكامل من Microsoft
-FROM mcr.microsoft.com/playwright:v1.40.0-focal
+FROM node:22-bookworm
 
-# تحديد مجلد العمل
 WORKDIR /app
 
-# نسخ ملفات التعاريف
 COPY package*.json ./
-
-# تثبيت جميع المكتبات
 RUN npm install
-RUN npm install playwright-extra puppeteer-extra-plugin-stealth
 
-# نسخ بقية كود المشروع
+# تثبيت متصفح Playwright مع كامل التبعات النظامية
+RUN npx playwright install chromium --with-deps
+
 COPY . .
 
-# أمر التشغيل الأساسي
 CMD ["node", "--expose-gc", "publisher.js"]
