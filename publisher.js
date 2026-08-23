@@ -23,9 +23,18 @@ const BOT_AI_FIELD = ACCOUNT_NUM === '1' ? 'ai_final_text' : `ai_final_text${ACC
 // 🔗 دوال الربط بلوحة التحكم المركزية 🟢 
 // -------------------------------------------------------------------------
 
+if (typeof globalThis.WebSocket === 'undefined') {
+    try {
+        globalThis.WebSocket = require('ws');
+    } catch(e) {}
+}
+
 const supabase = createClient(
     'https://bmsfhqmsovicpgxxwsgi.supabase.co',
-    'sb_publishable_l1IbZF35GnYYS8PamVX_kg_nTv_uyef'
+    'sb_publishable_l1IbZF35GnYYS8PamVX_kg_nTv_uyef',
+    {
+        auth: { persistSession: false, autoRefreshToken: false }
+    }
 );
 
 const TEMP_DIR = './temp';
