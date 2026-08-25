@@ -226,37 +226,64 @@ function randomDelay(minSeconds, maxSeconds) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-// 🤖 دالة إعادة صياغة الإعلان بالذكاء الاصطناعي
+// 🤖 دالة إعادة صياغة الإعلان بالذكاء الاصطناعي مع جلب النماذج النشطة ديناميكياً
 async function rewriteAdWithAI(title, description) {
     const apiKey = (process.env.GEMINI_API_KEY || '').trim();
     
     if (!apiKey) {
+        await logToDashboard(`⚠️ [AI] لم يتم العثور على مفتاح GEMINI_API_KEY في متغيرات البيئة.`, 'info');
         return `${title}\n\n${description}`;
     }
 
-    const promptText = `أنت خبير تسويق إلكتروني. قم بإعادة صياغة هذا الإعلان بأسلوب جذاب ومختلف مع الحفاظ على كل التفاصيل وأرقام الهواتف والروابط:
-العنوان: ${title}
-الوصف: ${description}`;
+    const promptText = `أنت خبير تسويق إلكتروني. قم بإعادة صياغة هذا الإعلان بأسلوب جذاب، جديد، ومختلف تماماً مع الحفاظ على نفس الفكرة والمعلومات الأساسية والروابط وأرقام الهواتف إن وجدت. اجعل العبارات طبيعية وغير مكررة.
+العنوان الاصلي: ${title}
+الوصف الاصلي: ${description}
 
-    const candidateModels = ['gemini-1.5-flash', 'gemini-1.5-flash-latest', 'gemini-pro'];
-    for (const modelName of candidateModels) {
-        try {
-            const response = await axios({
-                method: 'post',
-                url: `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`,
-                headers: { 'Content-Type': 'application/json' },
-                data: { contents: [{ parts: [{ text: promptText }] }] },
-                timeout: 10000
-            });
+أعطني النتيجة مباشرة بالتنسيق التالي:
+العنوان: [العنوان الجديد]
+الوصف: [الوصف الجديد]`;
 
-            const aiText = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-            if (aiText && aiText.trim().length > 10) {
-                await logToDashboard(`✨ [AI] تم صياغة نص المنشور بنجاح بواسطة (${modelName})!`, 'success');
-                return aiText.replace(/العنوان:/g, '').replace(/الوصف:/g, '').trim();
+    try {
+        const modelsResponse = await axios.get(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`, { timeout: 15000 });
+        const validModels = (modelsResponse.data.models || []).filter(m => 
+            m.supportedGenerationMethods && 
+            m.supportedGenerationMethods.includes('generateContent') &&
+            m.name.includes('gemini')
+        );
+
+        if (validModels.length === 0) {
+            await logToDashboard(`⚠️ [AI] مفتاحك لا يحتوي على أي نماذج تدعم توليد النصوص حالياً.`, 'info');
+            return `${title}\n\n${description}`;
+        }
+
+        for (const modelObj of validModels) {
+            const exactModelName = modelObj.name;
+            try {
+                await logToDashboard(`🧠 [AI] جاري محاولة الاتصال بالنموذج: ${exactModelName}...`, 'info');
+
+                const response = await axios({
+                    method: 'post',
+                    url: `https://generativelanguage.googleapis.com/v1beta/${exactModelName}:generateContent?key=${apiKey}`,
+                    headers: { 'Content-Type': 'application/json' },
+                    data: { contents: [{ parts: [{ text: promptText }] }] },
+                    timeout: 60000
+                });
+
+                const aiText = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (aiText && aiText.trim().length > 10) {
+                    await logToDashboard(`✨ [AI] تم صياغة نص المنشور بنجاح بواسطة (${exactModelName})!`, 'success');
+                    return aiText.replace(/العنوان:/g, '').replace(/الوصف:/g, '').trim();
+                }
+            } catch (err) {
+                await logToDashboard(`⚠️ [AI] تنبيه أثناء استدعاء النموذج (${exactModelName}): ${err.response?.data?.error?.message || err.message}`, 'info');
+                continue;
             }
-        } catch (e) {}
+        }
+    } catch (e) {
+        await logToDashboard(`⚠️ [AI] فشل الاتصال بقائمة نماذج Gemini: ${e.response?.data?.error?.message || e.message}`, 'info');
     }
 
+    await logToDashboard(`⚠️ [AI] تعذر إعادة الصياغة بالذكاء الاصطناعي، سيتم استخدام النص الأصلي.`, 'info');
     return `${title}\n\n${description}`;
 }
 
@@ -587,17 +614,17 @@ async function openPostBox(page) {
                     txt.includes('write something') || 
                     txt.includes('بم تفكر') || 
                     txt.includes("what's on your mind") || 
-                    txt.includes('إنشاء منشور') ||
-                    txt.includes('create a public post') ||
-                    txt.includes('ماذا تبيع') ||
-                    txt.includes('عنصر للبيع') ||
-                    txt.includes('sell something') ||
-                    txt.includes('بدء مناقشة') ||
-                    txt.includes('مناقشة') ||
-                    aria.includes('اكتب') ||
-                    aria.includes('write') ||
-                    aria.includes('إنشاء منشور') ||
-                    aria.includes('create a post') ||
+                    txt.includes('إنشاء منشور') || 
+                    txt.includes('create a public post') || 
+                    txt.includes('ماذا تبيع') || 
+                    txt.includes('عنصر للبيع') || 
+                    txt.includes('sell something') || 
+                    txt.includes('بدء مناقشة') || 
+                    txt.includes('مناقشة') || 
+                    aria.includes('اكتب') || 
+                    aria.includes('write') || 
+                    aria.includes('إنشاء منشور') || 
+                    aria.includes('create a post') || 
                     aria.includes('create a public post')
                 );
             });
@@ -1137,13 +1164,13 @@ async function processOnePost(post) {
         await logToDashboard(`🎥 [${ACCOUNT_NAME}] تم رصد رابط فيديو في السوبيس (ad_video): ${mediaUrl}`, 'info');
     } else if (post.video_url && post.video_url.trim() !== '') {
         mediaUrl = post.video_url.trim();
-        isVideoPost = true;
+        isVideoPost = true; 
         await logToDashboard(`🎥 [${ACCOUNT_NAME}] تم رصد رابط فيديو في السوبيس (video_url): ${mediaUrl}`, 'info');
     } else if (post.ad_image && post.ad_image.trim() !== '') {
         mediaUrl = post.ad_image.trim();
         const lowerImg = mediaUrl.toLowerCase();
         if (lowerImg.includes('.mp4') || lowerImg.includes('.mov') || lowerImg.includes('.webm') || lowerImg.includes('.mkv') || lowerImg.includes('.avi')) {
-            isVideoPost = true;
+            isVideoPost = true; 
             await logToDashboard(`🎥 [${ACCOUNT_NAME}] تم رصد فيديو عبر حقل الصورة (ad_image): ${mediaUrl}`, 'info');
         } else {
             await logToDashboard(`📸 [${ACCOUNT_NAME}] تم رصد رابط صورة في السوبيس (ad_image): ${mediaUrl}`, 'info');
